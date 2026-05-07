@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Keyfile Generator | Secure Generation</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --bg: #f8fafc;
+    --card-bg: #ffffff;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --success: #10b981;
+    --error: #ef4444;
+    --input-bg: #ffffff;
+  }
+
+  body.dark-mode {
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --bg: #0f172a;
+    --card-bg: #1e293b;
+    --text-main: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border: #334155;
+    --success: #10b981;
+    --error: #ef4444;
+    --input-bg: #0f172a;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg);
+    color: var(--text-main);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 1rem;
+    transition: background-color 0.3s ease;
+  }
+
+  .container {
+    background: var(--card-bg);
+    width: 100%;
+    max-width: 500px;
+    min-height: 620px; /* Fixed height to prevent resizing (Requirement 3) */
+    padding: 2.5rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.025em;
+  }
+
+  .settings-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 4px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    width: auto;
+  }
+
+  .settings-btn:hover {
+    background: var(--border);
+    color: var(--text-main);
+  }
+
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 100;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .modal {
+    background: var(--card-bg);
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    width: 300px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+  }
+
+  .modal-header {
+    font-weight: 700;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .close-modal {
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+
+  .mode-switch {
+    display: flex;
+    background: var(--bg);
+    padding: 4px;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .mode-switch label {
+    flex: 1;
+    text-align: center;
+    padding: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    border-radius: 6px;
+    margin: 0;
+    color: var(--text-muted);
+  }
+
+  .mode-switch input { display: none; }
+
+  .mode-switch input:checked + label {
+    background: var(--card-bg);
+    color: var(--primary);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-main);
+  }
+
+  .pw-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .show-pw-toggle {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    user-select: none;
+  }
+
+  .field-group { margin-bottom: 1.25rem; }
+
+  input[type="text"], 
+  input[type="password"], 
+  input[type="file"],
+  select, 
+  textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background-color: var(--input-bg);
+    color: var(--text-main);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+    box-sizing: border-box;
+  }
+
+  input:focus, select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  .btn-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+
+  button {
+    width: 100%;
+    padding: 0.75rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    border: none;
+  }
+
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-outline { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+  .btn-outline:hover { color: var(--text-main); border-color: var(--text-muted); }
+  
+  .btn-reset { 
+    background: transparent; 
+    color: var(--error); 
+    border: 1px solid var(--error); 
+    opacity: 0.7;
+  }
+  .btn-reset:hover { opacity: 1; background: rgba(239, 68, 68, 0.05); }
+
+  .entropy-meter {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 0.5rem;
+  }
+  .entropy-bar { height: 100%; width: 0; transition: width 0.3s, background 0.3s; }
+
+  .status { margin-top: 1rem; font-size: 0.875rem; text-align: center; min-height: 1.25rem; }
+
+  textarea { font-family: monospace; height: 100px; background: var(--bg); color: var(--text-main); resize: none; }
+  #decryptArea { display: none; }
+</style>
+</head>
+<body class="light-mode">
+
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Settings</span>
+      <span class="close-modal" id="closeSettings">&times;</span>
+    </div>
+    <label>Interface Theme</label>
+    <div class="mode-switch">
+      <input type="radio" id="theme-light" name="theme" value="light" checked>
+      <label for="theme-light">Light</label>
+      <input type="radio" id="theme-dark" name="theme" value="dark">
+      <label for="theme-dark">Dark</label>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <header>
+    <div class="title-row">
+      <h1>Keyfile Generator</h1>
+      <button class="settings-btn" id="openSettings" title="Settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
+    </div>
+    <div class="mode-switch">
+      <input type="radio" id="m-encrypt" name="mode" value="encrypt" checked>
+      <label for="m-encrypt">Generate/Encrypt</label>
+      <input type="radio" id="m-decrypt" name="mode" value="decrypt">
+      <label for="m-decrypt">Decrypt</label>
+    </div>
+  </header>
+
+  <!-- Generate/Encrypt Tab -->
+  <div id="encryptArea">
+    <div class="field-group">
+      <label for="filename">Output Filename</label>
+      <input type="text" id="filename" placeholder="vault-key">
+    </div>
+
+    <div class="field-group">
+      <label for="keySize">Key Entropy</label>
+      <select id="keySize">
+        <option value="64">512-bit (Maximum Security)</option>
+        <option value="32">256-bit (Standard Security)</option>
+      </select>
+      <div class="entropy-meter"><div id="entropyBar" class="entropy-bar"></div></div>
+    </div>
+
+    <div class="field-group">
+      <div class="pw-header">
+        <label for="password">Encryption Password</label>
+        <label class="show-pw-toggle"><input type="checkbox" id="showPwGen"> Show</label>
+      </div>
+      <input type="password" id="password" placeholder="••••••••">
+    </div>
+
+    <div class="field-group">
+      <label for="password2">Confirm Password</label>
+      <input type="password" id="password2" placeholder="••••••••">
+      <div class="entropy-meter"><div id="pwMatchBar" class="entropy-bar"></div></div>
+    </div>
+
+    <div class="btn-stack">
+      <button id="genEncBtn" class="btn-primary">Generate Encrypted Keyfile</button>
+      <button id="genUnencBtn" class="btn-outline">Download Unencrypted (Raw)</button>
+      <button id="resetEncBtn" class="btn-reset">Reset</button>
+    </div>
+    <div id="status" class="status"></div>
+  </div>
+
+  <!-- Decrypt Tab -->
+  <div id="decryptArea">
+    <div class="field-group">
+      <label>Import Keyfile</label>
+      <input type="file" id="fileInput" accept=".key,.enc.key">
+    </div>
+    <div id="decryptPasswordArea" style="visibility:hidden; height: 110px;" class="field-group">
+      <div class="pw-header">
+        <label for="decryptPassword">Password</label>
+        <label class="show-pw-toggle"><input type="checkbox" id="showPwDec"> Show</label>
+      </div>
+      <input type="password" id="decryptPassword">
+      <button id="decryptBtn" class="btn-primary" style="margin-top: 1rem;">Verify & Decrypt</button>
+    </div>
+    <div class="field-group">
+      <label>Output Buffer</label>
+      <textarea id="outputBox" readonly></textarea>
+    </div>
+    <div class="btn-stack">
+      <button id="resetDecBtn" class="btn-reset">Reset</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* -- Crypto Functions -- */
+function bytesToBase64(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function randomBytes(n) {
+  const a = new Uint8Array(n);
+  crypto.getRandomValues(a);
+  return a;
+}
+function zeroArray(arr) {
+  arr.fill(0);
+}
+async function pbkdf2(passwordBytes, saltBytes, iterations, lengthBytes) {
+  const keyMaterial = await crypto.subtle.importKey("raw", passwordBytes, { name: "PBKDF2" }, false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: saltBytes, iterations, hash: "SHA-512" }, keyMaterial, lengthBytes * 8);
+  const result = new Uint8Array(bits);
+  zeroArray(passwordBytes);
+  return result;
+}
+async function hmacSHA512(keyBytes, dataBytes) {
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, dataBytes));
+}
+async function encryptCTR(keyBytes, nonceBytes, plaintextBytes) {
+  const blockSize = 64;
+  const ciphertext = new Uint8Array(plaintextBytes.length);
+  for (let i = 0; i < plaintextBytes.length; i += blockSize) {
+    const counter = new Uint8Array(nonceBytes.length + 4);
+    counter.set(nonceBytes);
+    counter.set(new Uint8Array([(i>>>24)&255, (i>>>16)&255, (i>>>8)&255, i&255]), nonceBytes.length);
+    const keystream = await hmacSHA512(keyBytes, counter);
+    const chunk = plaintextBytes.subarray(i, i + blockSize);
+    for (let j = 0; j < chunk.length; j++) ciphertext[i + j] = chunk[j] ^ keystream[j];
+  }
+  return ciphertext;
+}
+async function encryptKeyfile(keyBytes, password) {
+  const enc = new TextEncoder();
+  const pwBytes = enc.encode(password);
+  const salt = randomBytes(16);
+  const nonce = randomBytes(16);
+  const iterations = 200000;
+  const derived = await pbkdf2(pwBytes, salt, iterations, 64);
+  const encKey = derived.slice(0, 32);
+  const macKey = derived.slice(32, 64);
+  const ciphertext = await encryptCTR(encKey, nonce, keyBytes);
+  const macInput = new Uint8Array(salt.length + nonce.length + ciphertext.length);
+  macInput.set(salt, 0); macInput.set(nonce, salt.length); macInput.set(ciphertext, salt.length + nonce.length);
+  const mac = await hmacSHA512(macKey, macInput);
+  const result = { magic: "KEYFILE-ENC", v: 1, kdf: { algo: "PBKDF2-SHA512", i: iterations, s: bytesToBase64(salt) }, n: bytesToBase64(nonce), ct: bytesToBase64(ciphertext), mac: bytesToBase64(mac) };
+  zeroArray(derived); zeroArray(encKey); zeroArray(macKey);
+  return result;
+}
+async function decryptKeyfile(obj, password) {
+  const enc = new TextEncoder();
+  const pwBytes = enc.encode(password);
+  const salt = base64ToBytes(obj.kdf.s);
+  const nonce = base64ToBytes(obj.n);
+  const ciphertext = base64ToBytes(obj.ct);
+  const macStored = base64ToBytes(obj.mac);
+  const derived = await pbkdf2(pwBytes, salt, obj.kdf.i, 64);
+  const encKey = derived.slice(0, 32);
+  const macKey = derived.slice(32, 64);
+  const macInput = new Uint8Array(salt.length + nonce.length + ciphertext.length);
+  macInput.set(salt, 0); macInput.set(nonce, salt.length); macInput.set(ciphertext, salt.length + nonce.length);
+  const macCalc = await hmacSHA512(macKey, macInput);
+  let match = true;
+  for (let i = 0; i < macCalc.length; i++) if (macCalc[i] !== macStored[i]) match = false;
+  if (!match) throw new Error("Integrity Check Failed");
+  const plain = await encryptCTR(encKey, nonce, ciphertext);
+  zeroArray(derived); zeroArray(encKey); zeroArray(macKey);
+  return plain;
+}
+
+/* -- Application Logic -- */
+
+// Theme & Modal
+const modal = document.getElementById("settingsModal");
+document.getElementById("openSettings").onclick = () => modal.style.display = "flex";
+document.getElementById("closeSettings").onclick = () => modal.style.display = "none";
+window.onclick = (e) => { if(e.target == modal) modal.style.display = "none"; };
+document.querySelectorAll("input[name='theme']").forEach(i => {
+  i.onchange = (e) => document.body.className = e.target.value === "dark" ? "dark-mode" : "light-mode";
+});
+
+// Reset Logic
+function resetApp() {
+  // Clear Encrypt
+  document.getElementById("filename").value = "";
+  document.getElementById("password").value = "";
+  document.getElementById("password2").value = "";
+  document.getElementById("showPwGen").checked = false;
+  document.getElementById("password").type = "password";
+  document.getElementById("password2").type = "password";
+  document.getElementById("pwMatchBar").style.width = "0";
+  document.getElementById("entropyBar").style.width = "0";
+  document.getElementById("status").innerText = "";
+  document.getElementById("keySize").selectedIndex = 0;
+  
+  // Clear Decrypt
+  document.getElementById("fileInput").value = "";
+  document.getElementById("decryptPassword").value = "";
+  document.getElementById("showPwDec").checked = false;
+  document.getElementById("decryptPassword").type = "password";
+  document.getElementById("decryptPasswordArea").style.visibility = "hidden";
+  document.getElementById("outputBox").value = "";
+}
+document.getElementById("resetEncBtn").onclick = resetApp;
+document.getElementById("resetDecBtn").onclick = resetApp;
+
+// UI State Handling
+document.querySelectorAll("input[name='mode']").forEach(r => {
+  r.onchange = (e) => {
+    document.getElementById("encryptArea").style.display = e.target.value === "encrypt" ? "block" : "none";
+    document.getElementById("decryptArea").style.display = e.target.value === "decrypt" ? "block" : "none";
+  };
+});
+
+function checkMatch() {
+  const p1 = document.getElementById("password").value;
+  const p2 = document.getElementById("password2").value;
+  const bar = document.getElementById("pwMatchBar");
+  if (!p1 && !p2) { bar.style.width = "0"; return; }
+  bar.style.width = "100%";
+  bar.style.background = (p1 === p2 && p1 !== "") ? "var(--success)" : "var(--error)";
+}
+document.getElementById("password").oninput = checkMatch;
+document.getElementById("password2").oninput = checkMatch;
+
+document.getElementById("showPwGen").onchange = (e) => {
+  const type = e.target.checked ? "text" : "password";
+  document.getElementById("password").type = type;
+  document.getElementById("password2").type = type;
+};
+document.getElementById("showPwDec").onchange = (e) => {
+  document.getElementById("decryptPassword").type = e.target.checked ? "text" : "password";
+};
+
+// Execution
+document.getElementById("genUnencBtn").onclick = () => {
+  const size = parseInt(document.getElementById("keySize").value);
+  const key = randomBytes(size);
+  document.getElementById("entropyBar").style.width = "100%";
+  document.getElementById("entropyBar").style.background = "var(--success)";
+  const obj = { magic: "KEYFILE", v: 1, len: size, key: bytesToBase64(key) };
+  const name = document.getElementById("filename").value.trim() || "key";
+  const blob = new Blob([JSON.stringify(obj)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}.key`;
+  a.click();
+  zeroArray(key);
+};
+
+document.getElementById("genEncBtn").onclick = async () => {
+  const stat = document.getElementById("status");
+  const p1 = document.getElementById("password").value;
+  const p2 = document.getElementById("password2").value;
+  if (!p1 || p1 !== p2) { stat.innerText = "Check password matches."; stat.style.color="var(--error)"; return; }
+  try {
+    const size = parseInt(document.getElementById("keySize").value);
+    const key = randomBytes(size);
+    document.getElementById("entropyBar").style.width = "100%";
+    document.getElementById("entropyBar").style.background = "var(--success)";
+    const enc = await encryptKeyfile(key, p1);
+    const name = document.getElementById("filename").value.trim() || "secure-key";
+    const blob = new Blob([JSON.stringify(enc)], {type: "application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name}.enc.key`;
+    a.click();
+    stat.innerText = "Encrypted keyfile generated."; stat.style.color="var(--success)";
+    zeroArray(key);
+  } catch(e) { stat.innerText = "Error."; stat.style.color="var(--error)"; }
+};
+
+document.getElementById("fileInput").onchange = async (e) => {
+  const f = e.target.files[0];
+  if(!f) return;
+  const obj = JSON.parse(await f.text());
+  if (obj.magic === "KEYFILE-ENC") document.getElementById("decryptPasswordArea").style.visibility = "visible";
+  else {
+    document.getElementById("decryptPasswordArea").style.visibility = "hidden";
+    document.getElementById("outputBox").value = JSON.stringify(obj, null, 2);
+  }
+};
+
+document.getElementById("decryptBtn").onclick = async () => {
+  const f = document.getElementById("fileInput").files[0];
+  const pw = document.getElementById("decryptPassword").value;
+  try {
+    const obj = JSON.parse(await f.text());
+    const dec = await decryptKeyfile(obj, pw);
+    document.getElementById("outputBox").value = JSON.stringify({magic:"KEYFILE", v:1, len:dec.length, key:bytesToBase64(dec)}, null, 2);
+    zeroArray(dec);
+  } catch(e) { alert("Decryption failed: " + e.message); }
+};
+</script>
+</body>
+</html>
