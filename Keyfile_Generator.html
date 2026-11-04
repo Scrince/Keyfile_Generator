@@ -320,6 +320,18 @@
       <div class="entropy-meter"><div id="pwMatchBar" class="entropy-bar"></div></div>
     </div>
 
+    <div class="field-group">
+      <label for="kdfIterations">KDF iterations (PBKDF2-SHA512)</label>
+      <select id="kdfIterations">
+        <option value="200000">200,000 — legacy (LFV/FinancialVault historical default)</option>
+        <option value="1000000" selected>1,000,000 — recommended (aligned with vault KDF strength)</option>
+      </select>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.4rem;line-height:1.4;">
+        Stored in the keyfile as <code>kdf.i</code>. Decrypt / LFV / FinancialVault read the embedded count.
+        <strong>Argon2id is not available</strong> in pure Web Crypto API (browser limitation).
+      </div>
+    </div>
+
     <div class="btn-stack">
       <button id="genEncBtn" class="btn-primary">Generate Encrypted Keyfile</button>
       <button id="genUnencBtn" class="btn-outline">Download Unencrypted (Raw)</button>
@@ -340,8 +352,9 @@
         <label class="show-pw-toggle"><input type="checkbox" id="showPwDec"> Show</label>
       </div>
       <input type="password" id="decryptPassword">
-      <button id="decryptBtn" class="btn-primary" style="margin-top: 1rem;">Verify & Decrypt</button>
+      <button id="decryptBtn" class="btn-primary" style="margin-top: 1rem;" disabled>Verify & Decrypt</button>
     </div>
+    <div id="decryptStatus" class="status"></div>
     <div class="field-group">
       <label>Output Buffer</label>
       <textarea id="outputBox" readonly></textarea>
@@ -360,10 +373,22 @@ function bytesToBase64(bytes) {
   return btoa(bin);
 }
 function base64ToBytes(b64) {
+  if (typeof b64 !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(b64)) {
+    throw new Error("Invalid base64 data");
+  }
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  if (bytesToBase64(out) !== b64) throw new Error("Invalid base64 data");
   return out;
+}
+function decodeBase64Field(value, expectedLength, fieldName) {
+  const bytes = base64ToBytes(value);
+  if (bytes.length !== expectedLength) {
+    zeroArray(bytes);
+    throw new Error(`Invalid ${fieldName} length`);
+  }
+  return bytes;
 }
 function randomBytes(n) {
   const a = new Uint8Array(n);
@@ -397,42 +422,105 @@ async function encryptCTR(keyBytes, nonceBytes, plaintextBytes) {
   }
   return ciphertext;
 }
-async function encryptKeyfile(keyBytes, password) {
+function validateEncryptedKeyfile(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj) || obj.magic !== "KEYFILE-ENC" || obj.v !== 1) {
+    throw new Error("Unsupported encrypted keyfile format");
+  }
+  if (!obj.kdf || typeof obj.kdf !== "object" || Array.isArray(obj.kdf) || obj.kdf.algo !== "PBKDF2-SHA512") {
+    throw new Error("Unsupported key derivation format");
+  }
+  if (!Number.isInteger(obj.kdf.i) || ![200000, 1000000].includes(obj.kdf.i)) {
+    throw new Error("Unsupported PBKDF2 iteration count");
+  }
+
+  const salt = decodeBase64Field(obj.kdf.s, 16, "salt");
+  let nonce, ciphertext, mac;
+  try {
+    nonce = decodeBase64Field(obj.n, 16, "nonce");
+    if (typeof obj.ct !== "string") throw new Error("Invalid ciphertext");
+    ciphertext = base64ToBytes(obj.ct);
+    if (![32, 64].includes(ciphertext.length)) throw new Error("Invalid ciphertext length");
+    mac = decodeBase64Field(obj.mac, 64, "MAC");
+    return { salt, nonce, ciphertext, mac };
+  } catch (e) {
+    zeroArray(salt);
+    if (nonce) zeroArray(nonce);
+    if (ciphertext) zeroArray(ciphertext);
+    if (mac) zeroArray(mac);
+    throw e;
+  }
+}
+function validateRawKeyfile(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj) || obj.magic !== "KEYFILE" || obj.v !== 1) {
+    throw new Error("Unsupported raw keyfile format");
+  }
+  if (![32, 64].includes(obj.len)) throw new Error("Invalid raw key length");
+  const key = decodeBase64Field(obj.key, obj.len, "key");
+  zeroArray(key);
+}
+/*
+ * Encrypted keyfile format (identical envelope to Local Financial Vault / FinancialVault):
+ *   { magic:"KEYFILE-ENC", v:1,
+ *     kdf:{ algo:"PBKDF2-SHA512", i:<iterations>, s:<salt b64> },
+ *     n:<nonce b64>, ct:<ciphertext b64>, mac:<HMAC-SHA512 b64> }
+ * Cipher: HMAC-SHA512-CTR with 4-byte big-endian block counter (not the vault's 8-byte counter).
+ * MAC: HMAC-SHA512(macKey, salt || nonce || ciphertext)
+ * Iteration count is self-describing via kdf.i (legacy 200000 or hardened 1000000).
+ * Argon2id is intentionally unavailable: pure WebCrypto has no Argon2.
+ */
+function getSelectedIterations() {
+  const el = document.getElementById("kdfIterations");
+  const n = el ? parseInt(el.value, 10) : 1000000;
+  return (n === 200000 || n === 1000000) ? n : 1000000;
+}
+
+async function encryptKeyfile(keyBytes, password, iterations) {
   const enc = new TextEncoder();
   const pwBytes = enc.encode(password);
   const salt = randomBytes(16);
   const nonce = randomBytes(16);
-  const iterations = 200000;
-  const derived = await pbkdf2(pwBytes, salt, iterations, 64);
+  const iters = iterations || getSelectedIterations();
+  const derived = await pbkdf2(pwBytes, salt, iters, 64);
   const encKey = derived.slice(0, 32);
   const macKey = derived.slice(32, 64);
   const ciphertext = await encryptCTR(encKey, nonce, keyBytes);
   const macInput = new Uint8Array(salt.length + nonce.length + ciphertext.length);
   macInput.set(salt, 0); macInput.set(nonce, salt.length); macInput.set(ciphertext, salt.length + nonce.length);
   const mac = await hmacSHA512(macKey, macInput);
-  const result = { magic: "KEYFILE-ENC", v: 1, kdf: { algo: "PBKDF2-SHA512", i: iterations, s: bytesToBase64(salt) }, n: bytesToBase64(nonce), ct: bytesToBase64(ciphertext), mac: bytesToBase64(mac) };
+  const result = {
+    magic: "KEYFILE-ENC",
+    v: 1,
+    kdf: { algo: "PBKDF2-SHA512", i: iters, s: bytesToBase64(salt) },
+    n: bytesToBase64(nonce),
+    ct: bytesToBase64(ciphertext),
+    mac: bytesToBase64(mac)
+  };
   zeroArray(derived); zeroArray(encKey); zeroArray(macKey);
   return result;
 }
 async function decryptKeyfile(obj, password) {
-  const enc = new TextEncoder();
-  const pwBytes = enc.encode(password);
-  const salt = base64ToBytes(obj.kdf.s);
-  const nonce = base64ToBytes(obj.n);
-  const ciphertext = base64ToBytes(obj.ct);
-  const macStored = base64ToBytes(obj.mac);
-  const derived = await pbkdf2(pwBytes, salt, obj.kdf.i, 64);
-  const encKey = derived.slice(0, 32);
-  const macKey = derived.slice(32, 64);
-  const macInput = new Uint8Array(salt.length + nonce.length + ciphertext.length);
-  macInput.set(salt, 0); macInput.set(nonce, salt.length); macInput.set(ciphertext, salt.length + nonce.length);
-  const macCalc = await hmacSHA512(macKey, macInput);
-  let match = true;
-  for (let i = 0; i < macCalc.length; i++) if (macCalc[i] !== macStored[i]) match = false;
-  if (!match) throw new Error("Integrity Check Failed");
-  const plain = await encryptCTR(encKey, nonce, ciphertext);
-  zeroArray(derived); zeroArray(encKey); zeroArray(macKey);
-  return plain;
+  const { salt, nonce, ciphertext, mac: macStored } = validateEncryptedKeyfile(obj);
+  const pwBytes = new TextEncoder().encode(password);
+  let derived, encKey, macKey, macInput, macCalc;
+  try {
+    derived = await pbkdf2(pwBytes, salt, obj.kdf.i, 64);
+    encKey = derived.slice(0, 32);
+    macKey = derived.slice(32, 64);
+    macInput = new Uint8Array(salt.length + nonce.length + ciphertext.length);
+    macInput.set(salt, 0); macInput.set(nonce, salt.length); macInput.set(ciphertext, salt.length + nonce.length);
+    macCalc = await hmacSHA512(macKey, macInput);
+    let match = macCalc.length === macStored.length;
+    for (let i = 0; i < macCalc.length; i++) if (macCalc[i] !== macStored[i]) match = false;
+    if (!match) throw new Error("Integrity Check Failed");
+    return await encryptCTR(encKey, nonce, ciphertext);
+  } finally {
+    zeroArray(pwBytes); zeroArray(salt); zeroArray(nonce); zeroArray(ciphertext); zeroArray(macStored);
+    if (derived) zeroArray(derived);
+    if (encKey) zeroArray(encKey);
+    if (macKey) zeroArray(macKey);
+    if (macInput) zeroArray(macInput);
+    if (macCalc) zeroArray(macCalc);
+  }
 }
 
 /* -- Application Logic -- */
@@ -459,6 +547,8 @@ function resetApp() {
   document.getElementById("entropyBar").style.width = "0";
   document.getElementById("status").innerText = "";
   document.getElementById("keySize").selectedIndex = 0;
+  const kdfSel = document.getElementById("kdfIterations");
+  if (kdfSel) kdfSel.value = "1000000";
   
   // Clear Decrypt
   document.getElementById("fileInput").value = "";
@@ -466,6 +556,8 @@ function resetApp() {
   document.getElementById("showPwDec").checked = false;
   document.getElementById("decryptPassword").type = "password";
   document.getElementById("decryptPasswordArea").style.visibility = "hidden";
+  document.getElementById("decryptBtn").disabled = true;
+  document.getElementById("decryptStatus").innerText = "";
   document.getElementById("outputBox").value = "";
 }
 document.getElementById("resetEncBtn").onclick = resetApp;
@@ -509,9 +601,11 @@ document.getElementById("genUnencBtn").onclick = () => {
   const name = document.getElementById("filename").value.trim() || "key";
   const blob = new Blob([JSON.stringify(obj)], {type: "application/json"});
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  a.href = url;
   a.download = `${name}.key`;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
   zeroArray(key);
 };
 
@@ -525,38 +619,74 @@ document.getElementById("genEncBtn").onclick = async () => {
     const key = randomBytes(size);
     document.getElementById("entropyBar").style.width = "100%";
     document.getElementById("entropyBar").style.background = "var(--success)";
-    const enc = await encryptKeyfile(key, p1);
+    const iters = getSelectedIterations();
+    const enc = await encryptKeyfile(key, p1, iters);
     const name = document.getElementById("filename").value.trim() || "secure-key";
     const blob = new Blob([JSON.stringify(enc)], {type: "application/json"});
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
+    a.href = url;
     a.download = `${name}.enc.key`;
     a.click();
-    stat.innerText = "Encrypted keyfile generated."; stat.style.color="var(--success)";
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    stat.innerText = `Encrypted keyfile generated (PBKDF2-SHA512, ${iters.toLocaleString()} iterations).`;
+    stat.style.color="var(--success)";
     zeroArray(key);
   } catch(e) { stat.innerText = "Error."; stat.style.color="var(--error)"; }
 };
 
 document.getElementById("fileInput").onchange = async (e) => {
   const f = e.target.files[0];
-  if(!f) return;
-  const obj = JSON.parse(await f.text());
-  if (obj.magic === "KEYFILE-ENC") document.getElementById("decryptPasswordArea").style.visibility = "visible";
-  else {
+  const stat = document.getElementById("decryptStatus");
+  const decryptBtn = document.getElementById("decryptBtn");
+  decryptBtn.disabled = true;
+  stat.innerText = "";
+  document.getElementById("outputBox").value = "";
+  if(!f) {
     document.getElementById("decryptPasswordArea").style.visibility = "hidden";
-    document.getElementById("outputBox").value = JSON.stringify(obj, null, 2);
+    return;
+  }
+  try {
+    if (f.size > 16384) throw new Error("Keyfile is too large");
+    const obj = JSON.parse(await f.text());
+    if (obj && obj.magic === "KEYFILE-ENC") {
+      const decoded = validateEncryptedKeyfile(obj);
+      zeroArray(decoded.salt); zeroArray(decoded.nonce); zeroArray(decoded.ciphertext); zeroArray(decoded.mac);
+      decryptBtn.disabled = false;
+      document.getElementById("decryptPasswordArea").style.visibility = "visible";
+    } else {
+      validateRawKeyfile(obj);
+      document.getElementById("decryptPasswordArea").style.visibility = "hidden";
+      document.getElementById("outputBox").value = JSON.stringify(obj, null, 2);
+    }
+  } catch(e) {
+    document.getElementById("decryptPasswordArea").style.visibility = "hidden";
+    stat.innerText = "Invalid keyfile: " + e.message;
+    stat.style.color = "var(--error)";
   }
 };
 
 document.getElementById("decryptBtn").onclick = async () => {
   const f = document.getElementById("fileInput").files[0];
   const pw = document.getElementById("decryptPassword").value;
+  const stat = document.getElementById("decryptStatus");
+  if (!f) {
+    stat.innerText = "Select a keyfile before decrypting.";
+    stat.style.color = "var(--error)";
+    return;
+  }
   try {
+    if (f.size > 16384) throw new Error("Keyfile is too large");
     const obj = JSON.parse(await f.text());
     const dec = await decryptKeyfile(obj, pw);
     document.getElementById("outputBox").value = JSON.stringify({magic:"KEYFILE", v:1, len:dec.length, key:bytesToBase64(dec)}, null, 2);
+    stat.innerText = "Keyfile decrypted.";
+    stat.style.color = "var(--success)";
     zeroArray(dec);
-  } catch(e) { alert("Decryption failed: " + e.message); }
+  } catch(e) {
+    stat.innerText = "Decryption failed: " + e.message;
+    stat.style.color = "var(--error)";
+  }
 };
 </script>
 </body>
