@@ -1,0 +1,27 @@
+KeyfileGenerator production tree
+===============================
+
+Repository root
+|
+|-- Keyfile_Generator.html                 Standalone production application; open in a modern browser
+|-- README.md                              User guide, usage, keyfile format, and interoperability notes
+|-- SECURITY.md                            Security reporting and practices
+|-- THREAT_MODEL.md                        Security scope and threat model
+|-- CHANGELOG.md                           User-facing release history
+|-- LICENSE                                MIT license
+|-- CONTRIBUTING.md                        Portability and compatibility requirements
+|-- *.asc                                  Detached ASCII-armored signatures for the signed root files
+|-- docs/
+|   |-- SHA256SUMS                         SHA-256 manifest for the release files
+|   |-- SHA256SUMS.asc                     Detached signature for the checksum manifest
+|   `-- Keyfile_Generator_Release_Signing_2026_pubkey.asc
+|                                           Public key for checking release signatures
+`-- scripts/
+    `-- init-and-sign.ps1                  Release helper that creates the public key, checksums, and signatures
+
+Production notes
+----------------
+- The production source of truth is `Keyfile_Generator.html`. It is a self-contained browser application; the project specifies no external runtime dependencies or platform-specific installers.
+- The shipped application copy is the root HTML file itself. There are no separate platform packages or generated application bundles in this repository.
+- `scripts/init-and-sign.ps1` creates the release public key, hashes the listed root release files into `docs/SHA256SUMS`, and creates detached `.asc` signatures. The signatures and checksum manifest are release verification artifacts, not application code.
+- The app depends on a modern browser with Web Crypto API support. It is designed to run locally as a standalone HTML file.
